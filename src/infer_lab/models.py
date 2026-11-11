@@ -53,8 +53,12 @@ class Request:
 
     @property
     def total_target_tokens(self) -> int:
-        """Total tokens required to complete generation (prompt + output)."""
-        return self.prompt_tokens + self.max_output_tokens
+        """Total token computations required (prompt + remaining decode steps).
+
+        In autoregressive LLM serving, computing the final prompt token yields
+        the first output token, leaving `max_output_tokens - 1` decode steps.
+        """
+        return self.prompt_tokens + self.max_output_tokens - 1
 
     @property
     def remaining_prompt_tokens(self) -> int:
@@ -92,6 +96,18 @@ class SchedulerConfig:
             raise ValueError("max_num_batched_tokens must be positive")
 
 
+@dataclass(frozen=True)
+class SimulationConfig:
+    """Configuration for a single-instance DES run."""
+
+    ttft_slo_ms: float = 500.0
+    tpot_slo_ms: float = 50.0
+
+    def __post_init__(self) -> None:
+        if self.ttft_slo_ms <= 0 or self.tpot_slo_ms <= 0:
+            raise ValueError("SLO thresholds must be positive")
+
+
 @dataclass
 class StepDecision:
     """Output of a single scheduling step."""
@@ -101,3 +117,6 @@ class StepDecision:
     total_scheduled_tokens: int = 0
     prefill_tokens: int = 0
     decode_tokens: int = 0
+    prefill_batch_size: int = 0
+    decode_batch_size: int = 0
+    decode_kv_tokens: int = 0

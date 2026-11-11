@@ -14,14 +14,19 @@ from infer_lab import (
 
 def test_request_validation_and_token_targets() -> None:
     req = Request(request_id="r1", arrival_time_ms=0.0, prompt_tokens=100, max_output_tokens=10)
-    assert req.total_target_tokens == 110
+    assert req.total_target_tokens == 109
     assert req.next_step_target_tokens == 100
 
     req.num_computed_tokens = 100
     assert req.next_step_target_tokens == 1
 
-    req.num_computed_tokens = 110
+    req.num_computed_tokens = 109
     assert req.next_step_target_tokens == 0
+
+    single_tok = Request(
+        request_id="r2", arrival_time_ms=0.0, prompt_tokens=50, max_output_tokens=1
+    )
+    assert single_tok.total_target_tokens == 50
 
     with pytest.raises(ValueError):
         Request(request_id="bad", arrival_time_ms=0.0, prompt_tokens=0, max_output_tokens=5)

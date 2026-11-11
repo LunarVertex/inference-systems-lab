@@ -18,6 +18,15 @@ class BaseScheduler(ABC):
         """Select requests and token counts for the next execution step."""
 
     @abstractmethod
+    def commit_step(
+        self,
+        decision: StepDecision,
+        step_start_ms: float = 0.0,
+        step_end_ms: float = 0.0,
+    ) -> list[Request]:
+        """Advance state after a step completes and return finished requests."""
+
+    @abstractmethod
     def has_unfinished_requests(self) -> bool:
         """Return True while waiting or running queues are non-empty."""
 
@@ -81,18 +90,31 @@ class FCFSScheduler(BaseScheduler):
         decision.total_scheduled_tokens += num_new_tokens
         if is_prefill:
             decision.prefill_tokens += num_new_tokens
+            decision.prefill_batch_size += 1
         else:
             decision.decode_tokens += num_new_tokens
+            decision.decode_batch_size += 1
+            decision.decode_kv_tokens += req.num_computed_tokens
 
-    def commit_step(self, decision: StepDecision) -> list[Request]:
+    def commit_step(
+        self,
+        decision: StepDecision,
+        step_start_ms: float = 0.0,
+        step_end_ms: float = 0.0,
+    ) -> list[Request]:
         """Advance token progress after a simulated step and retire finished requests."""
         finished: list[Request] = []
         still_running: list[Request] = []
         for req in self.running:
             scheduled = decision.scheduled_tokens.get(req.request_id, 0)
+            if scheduled > 0 and req.first_scheduled_ms is None:
+                req.first_scheduled_ms = step_start_ms
             req.num_computed_tokens += scheduled
+            if req.first_token_ms is None and req.num_computed_tokens >= req.prompt_tokens:
+                req.first_token_ms = step_end_ms
             if req.num_computed_tokens >= req.total_target_tokens:
                 req.status = RequestStatus.FINISHED_LENGTH_CAPPED
+                req.completion_ms = step_end_ms
                 finished.append(req)
             else:
                 still_running.append(req)
